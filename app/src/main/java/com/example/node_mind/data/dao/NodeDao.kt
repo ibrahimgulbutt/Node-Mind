@@ -1,4 +1,4 @@
-package com.example.node_mind.data.database
+package com.example.node_mind.data.dao
 
 import androidx.room.*
 import com.example.node_mind.data.model.Node

@@ -126,8 +126,7 @@ class MindMapViewModel(
     fun moveNode(nodeId: String, newX: Float, newY: Float) {
         viewModelScope.launch {
             try {
-                nodeRepository.updateNodePosition(nodeId, newX, newY)
-                
+                // Update in-memory state immediately for responsive UI
                 val updatedNodes = _uiState.value.nodes.map { nodePos ->
                     if (nodePos.node.id == nodeId) {
                         nodePos.copy(x = newX, y = newY)

@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import android.content.Context
+import com.example.node_mind.data.dao.*
 import com.example.node_mind.data.model.*
 
 @Database(
@@ -17,7 +18,8 @@ abstract class NodeMindDatabase : RoomDatabase() {
     
     abstract fun taskDao(): TaskDao
     abstract fun nodeDao(): NodeDao  
-    abstract fun focusDao(): FocusDao
+    abstract fun focusSessionDao(): FocusSessionDao
+    abstract fun dailyStatsDao(): DailyStatsDao
     
     companion object {
         @Volatile

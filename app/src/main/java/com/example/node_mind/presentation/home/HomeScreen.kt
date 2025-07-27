@@ -62,11 +62,15 @@ fun HomeScreen(
             }
             
             composable("focus") {
-                FocusScreen()
+                FocusScreen(
+                    viewModel = viewModel<com.example.node_mind.presentation.focus.FocusViewModel>(factory = viewModelFactory)
+                )
             }
             
             composable("dashboard") {
-                DashboardScreen()
+                DashboardScreen(
+                    viewModel = viewModel<com.example.node_mind.presentation.dashboard.DashboardViewModel>(factory = viewModelFactory)
+                )
             }
         }
     }

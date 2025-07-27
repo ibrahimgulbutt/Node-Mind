@@ -3,6 +3,8 @@ package com.example.node_mind.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.example.node_mind.di.AppContainer
+import com.example.node_mind.presentation.dashboard.DashboardViewModel
+import com.example.node_mind.presentation.focus.FocusViewModel
 import com.example.node_mind.presentation.mindmap.MindMapViewModel
 import com.example.node_mind.presentation.nodes.NodesViewModel
 import com.example.node_mind.presentation.onboarding.OnboardingViewModel
@@ -30,6 +32,12 @@ class ViewModelFactory(
             }
             MindMapViewModel::class.java -> {
                 MindMapViewModel(appContainer.nodeRepository) as T
+            }
+            FocusViewModel::class.java -> {
+                FocusViewModel(appContainer.focusRepository, appContainer.taskRepository) as T
+            }
+            DashboardViewModel::class.java -> {
+                DashboardViewModel(appContainer.focusRepository, appContainer.taskRepository, appContainer.nodeRepository) as T
             }
             else -> throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
         }

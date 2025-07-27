@@ -19,8 +19,8 @@ class NodeRepository(
     fun searchNodes(query: String): Flow<List<Node>> = nodeDao.searchNodes(query)
     
     // Create operations
-    suspend fun insertNode(node: Node) {
-        nodeDao.insertNode(node)
+    suspend fun insertNode(node: Node): Long {
+        return nodeDao.insertNode(node)
     }
     
     suspend fun createNode(title: String, content: String = "", tags: List<String> = emptyList()): Node {

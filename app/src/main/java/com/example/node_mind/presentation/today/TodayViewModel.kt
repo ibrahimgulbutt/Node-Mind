@@ -60,7 +60,14 @@ class TodayViewModel(
     fun toggleTaskComplete(taskId: String) {
         viewModelScope.launch {
             try {
-                taskRepository.toggleTaskCompletion(taskId)
+                val task = taskRepository.getTaskById(taskId)
+                if (task != null) {
+                    if (task.isCompleted) {
+                        taskRepository.uncompleteTask(taskId)
+                    } else {
+                        taskRepository.completeTask(taskId)
+                    }
+                }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     error = "Failed to update task: ${e.message}"

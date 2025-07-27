@@ -8,11 +8,8 @@ import com.example.node_mind.data.model.SessionType
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
 import java.time.LocalDateTime
-import javax.inject.Inject
-import javax.inject.Singleton
 
-@Singleton
-class FocusRepository @Inject constructor(
+class FocusRepository(
     private val focusSessionDao: FocusSessionDao,
     private val dailyStatsDao: DailyStatsDao
 ) {

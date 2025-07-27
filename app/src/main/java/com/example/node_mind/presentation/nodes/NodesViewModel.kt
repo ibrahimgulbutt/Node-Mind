@@ -56,9 +56,7 @@ class NodesViewModel(
     )
     
     // Get all available tags
-    val availableTags = flow {
-        emit(nodeRepository.getAllTags())
-    }.stateIn(
+    val availableTags = nodeRepository.getAllTags().stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()

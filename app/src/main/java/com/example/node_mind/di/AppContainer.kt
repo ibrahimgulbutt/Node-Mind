@@ -3,6 +3,7 @@ package com.example.node_mind.di
 import android.content.Context
 import com.example.node_mind.data.database.NodeMindDatabase
 import com.example.node_mind.data.preferences.PreferencesManager
+import com.example.node_mind.data.repository.FocusRepository
 import com.example.node_mind.data.repository.NodeRepository
 import com.example.node_mind.data.repository.TaskRepository
 
@@ -26,6 +27,10 @@ class AppContainer(private val context: Context) {
     
     val nodeRepository by lazy {
         NodeRepository(database.nodeDao())
+    }
+    
+    val focusRepository by lazy {
+        FocusRepository(database.focusSessionDao(), database.dailyStatsDao())
     }
     
     // ViewModels would be created here in a real app

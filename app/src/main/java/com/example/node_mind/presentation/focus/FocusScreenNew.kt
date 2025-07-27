@@ -62,23 +62,20 @@ fun FocusScreen(
         // Session Type Selection
         SessionTypeSelector(
             currentType = uiState.sessionType,
-            onTypeSelected = viewModel::selectSessionType
+            onTypeSelected = viewModel::setSessionType
         )
         
         Spacer(modifier = Modifier.height(24.dp))
         
         // Timer Display
         TimerDisplay(
-            remainingTime = uiState.remainingSeconds * 1000L,
-            totalTime = uiState.totalSeconds * 1000L,
+            remainingTime = uiState.remainingTimeMs,
+            totalTime = uiState.totalTimeMs,
             sessionType = uiState.sessionType,
-            isRunning = uiState.isTimerRunning,
-            isPaused = uiState.isPaused,
-            onStart = viewModel::startTimer,
-            onPause = viewModel::pauseTimer,
-            onResume = viewModel::resumeTimer,
+            isRunning = uiState.isRunning,
+            onStartPause = viewModel::startPauseTimer,
             onStop = viewModel::stopTimer,
-            onTimeAdjust = { minutes -> viewModel.setCustomDuration((uiState.totalSeconds / 60) + (minutes / 60000).toInt()) }
+            onTimeAdjust = viewModel::adjustTime
         )
         
         Spacer(modifier = Modifier.height(24.dp))
@@ -87,12 +84,12 @@ fun FocusScreen(
         if (uiState.selectedTask != null) {
             CurrentTaskCard(
                 task = uiState.selectedTask!!,
-                onRemoveTask = { viewModel.selectTask(null) }
+                onRemoveTask = { viewModel.setSelectedTask(null) }
             )
         } else {
             SelectTaskButton(
                 tasks = uiState.availableTasks,
-                onTaskSelected = viewModel::selectTask
+                onTaskSelected = viewModel::setSelectedTask
             )
         }
         
@@ -140,10 +137,7 @@ private fun TimerDisplay(
     totalTime: Long,
     sessionType: SessionType,
     isRunning: Boolean,
-    isPaused: Boolean,
-    onStart: () -> Unit,
-    onPause: () -> Unit,
-    onResume: () -> Unit,
+    onStartPause: () -> Unit,
     onStop: () -> Unit,
     onTimeAdjust: (Long) -> Unit
 ) {
@@ -197,40 +191,23 @@ private fun TimerDisplay(
         Row(
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Start/Pause/Resume Button
+            // Start/Pause Button
             Button(
-                onClick = {
-                    when {
-                        !isRunning && !isPaused -> onStart()
-                        isRunning -> onPause()
-                        isPaused -> onResume()
-                    }
-                },
+                onClick = onStartPause,
                 modifier = Modifier.size(width = 120.dp, height = 48.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = when {
-                        isRunning -> MaterialTheme.colorScheme.secondary
-                        isPaused -> MaterialTheme.colorScheme.tertiary
-                        else -> MaterialTheme.colorScheme.primary
-                    }
+                    containerColor = if (isRunning) MaterialTheme.colorScheme.secondary 
+                                   else MaterialTheme.colorScheme.primary
                 )
             ) {
-                when {
-                    isRunning -> {
-                        Text("⏸️", fontSize = 16.sp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Pause")
-                    }
-                    isPaused -> {
-                        Text("▶️", fontSize = 16.sp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Resume")
-                    }
-                    else -> {
-                        Text("▶️", fontSize = 16.sp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Start")
-                    }
+                if (isRunning) {
+                    Text("⏸️", fontSize = 16.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Pause")
+                } else {
+                    Text("▶️", fontSize = 16.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Start")
                 }
             }
             
@@ -475,7 +452,11 @@ private fun RecentSessionsCard(
                     fontWeight = FontWeight.Medium
                 )
                 
-                Text("⏰", fontSize = 20.sp, color = MaterialTheme.colorScheme.primary)
+                Icon(
+                    imageVector = Icons.Default.AccessTime,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
             }
             
             Spacer(modifier = Modifier.height(12.dp))
@@ -527,18 +508,18 @@ private fun SessionItem(session: FocusSession) {
         
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = session.sessionType.displayName,
+                text = session.sessionType.name.replace("_", " "),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium
             )
             Text(
-                text = "${session.durationMinutes}m • ${formatDateTime(session.startTime)}",
+                text = "${formatDuration(session.duration)} • ${formatDateTime(session.startTime)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         
-        if (session.isCompleted) {
+        if (session.completed) {
             Icon(
                 imageVector = Icons.Default.CheckCircle,
                 contentDescription = "Completed",
@@ -565,12 +546,12 @@ private fun formatTime(timeMs: Long): String {
     return "%02d:%02d".format(minutes, seconds)
 }
 
-private fun formatDateTime(dateTimeString: String): String {
-    return try {
-        val dateTime = LocalDateTime.parse(dateTimeString)
-        val formatter = DateTimeFormatter.ofPattern("MMM dd, HH:mm")
-        dateTime.format(formatter)
-    } catch (e: Exception) {
-        dateTimeString.take(10) // Just show first 10 chars if parsing fails
-    }
+private fun formatDuration(durationMs: Long): String {
+    val minutes = durationMs / (1000 * 60)
+    return "${minutes}m"
+}
+
+private fun formatDateTime(dateTime: LocalDateTime): String {
+    val formatter = DateTimeFormatter.ofPattern("MMM dd, HH:mm")
+    return dateTime.format(formatter)
 }
