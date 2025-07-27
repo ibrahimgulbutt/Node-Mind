@@ -2,24 +2,15 @@ package com.example.node_mind.presentation.mindmap
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,21 +18,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.node_mind.data.model.Node
 import kotlin.math.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -51,10 +42,13 @@ fun MindMapScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    var isConnectionMode by remember { mutableStateOf(false) }
+    var connectionStartNode by remember { mutableStateOf<NodePosition?>(null) }
     
-    // Handle errors
-    uiState.error?.let { error ->
-        LaunchedEffect(error) {
+    // Handle errors with auto-dismiss
+    LaunchedEffect(uiState.error) {
+        uiState.error?.let {
+            kotlinx.coroutines.delay(3000)
             viewModel.clearError()
         }
     }
@@ -62,140 +56,87 @@ fun MindMapScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(
+                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.background,
+                        MaterialTheme.colorScheme.surface
+                    )
+                )
+            )
     ) {
-        if (uiState.isLoading) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator(
-                    color = MaterialTheme.colorScheme.primary
+        when {
+            uiState.isLoading -> {
+                LoadingState()
+            }
+            uiState.error != null -> {
+                ErrorState(
+                    error = uiState.error!!,
+                    onRetry = viewModel::refreshData
                 )
             }
-        } else {
-            // Main mind map canvas
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .onGloballyPositioned { coordinates ->
-                        canvasSize = coordinates.size
-                    }
-            ) {
-                // Draw connections canvas
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            scaleX = uiState.scale
-                            scaleY = uiState.scale
-                            translationX = uiState.offsetX
-                            translationY = uiState.offsetY
+            else -> {
+                EnhancedMindMapContent(
+                    uiState = uiState,
+                    canvasSize = canvasSize,
+                    isConnectionMode = isConnectionMode,
+                    connectionStartNode = connectionStartNode,
+                    onCanvasSizeChanged = { canvasSize = it },
+                    onNodeClick = { nodePosition ->
+                        when {
+                            isConnectionMode -> {
+                                if (connectionStartNode == null) {
+                                    connectionStartNode = nodePosition
+                                } else {
+                                    // Create connection
+                                    viewModel.connectNodes(
+                                        connectionStartNode!!.node.id,
+                                        nodePosition.node.id
+                                    )
+                                    connectionStartNode = null
+                                    isConnectionMode = false
+                                }
+                            }
+                            else -> viewModel.selectNode(nodePosition)
                         }
-                ) {
-                    // Draw connections first (behind nodes)
-                    uiState.connections.forEach { connection ->
-                        // Simple line drawing for connections
-                        val startOffset = Offset(connection.fromX, connection.fromY)
-                        val endOffset = Offset(connection.toX, connection.toY)
-                        drawLine(
-                            color = androidx.compose.ui.graphics.Color.Gray,
-                            start = startOffset,
-                            end = endOffset,
-                            strokeWidth = 3.dp.toPx()
-                        )
-                    }
-                }
-                
-                // Draw nodes on top of connections
-                uiState.nodes.forEach { nodePosition ->
-                    MindMapNode(
-                        nodePosition = nodePosition,
-                        scale = uiState.scale,
-                        offsetX = uiState.offsetX,
-                        offsetY = uiState.offsetY,
-                        onNodeClick = { viewModel.selectNode(nodePosition) },
-                        onNodeDrag = { deltaX, deltaY ->
-                            viewModel.moveNode(
-                                nodePosition.node.id,
-                                nodePosition.x + deltaX / uiState.scale,
-                                nodePosition.y + deltaY / uiState.scale
-                            )
-                        }
-                    )
-                }
-                
-                // Empty state
-                if (uiState.nodes.isEmpty()) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        EmptyMindMapState(
-                            onAddClick = viewModel::showAddDialog
-                        )
-                    }
-                }
+                    },
+                    onNodeDrag = viewModel::moveNode,
+                    onScaleChange = viewModel::updateScale,
+                    onOffsetChange = viewModel::updateOffset
+                )
             }
         }
+
+        // Enhanced toolbar with connection mode
+        EnhancedMindMapToolbar(
+            isConnectionMode = isConnectionMode,
+            connectionStartNode = connectionStartNode,
+            onAddNode = { viewModel.showAddDialog() },
+            onToggleConnectionMode = {
+                isConnectionMode = !isConnectionMode
+                if (!isConnectionMode) {
+                    connectionStartNode = null
+                }
+            },
+            onDeleteSelectedNodes = viewModel::deleteSelectedNodes,
+            onResetView = viewModel::resetView,
+            onSave = viewModel::saveMindMap,
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
         
-        // Top controls
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Mind Map",
-                style = MaterialTheme.typography.headlineMedium.copy(
-                    fontWeight = FontWeight.Bold
-                ),
-                color = MaterialTheme.colorScheme.onBackground
+        // Connection mode indicator
+        if (isConnectionMode) {
+            ConnectionModeIndicator(
+                connectionStartNode = connectionStartNode,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 100.dp)
             )
-            
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Center button
-                FloatingActionButton(
-                    onClick = viewModel::centerMap,
-                    modifier = Modifier.size(48.dp),
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    elevation = FloatingActionButtonDefaults.elevation(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Center Map",
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-                
-                // Add node button
-                FloatingActionButton(
-                    onClick = viewModel::showAddDialog,
-                    modifier = Modifier.size(48.dp),
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    elevation = FloatingActionButtonDefaults.elevation(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Add Node",
-                        tint = MaterialTheme.colorScheme.onPrimary
-                    )
-                }
-            }
         }
-        
-        // Bottom panel for selected node
-        uiState.selectedNode?.let { selectedNode ->
-            SelectedNodePanel(
-                nodePosition = selectedNode,
-                onEdit = { viewModel.showEditDialog(selectedNode.node) },
-                onDelete = { viewModel.deleteNode(selectedNode.node) },
-                onConnect = { /* TODO: Implement connection mode */ },
-                onDeselect = { viewModel.selectNode(selectedNode) },
+
+        // Error display
+        uiState.error?.let { error ->
+            EnhancedErrorSnackbar(
+                error = error,
+                onDismiss = viewModel::clearError,
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
@@ -208,30 +149,28 @@ fun MindMapScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             FloatingActionButton(
-                onClick = { viewModel.updateScale(uiState.scale * 1.2f) },
-                modifier = Modifier.size(40.dp),
-                containerColor = MaterialTheme.colorScheme.surface,
-                elevation = FloatingActionButtonDefaults.elevation(2.dp)
+                onClick = { viewModel.updateScale((uiState.scale * 1.2f).coerceAtMost(3f)) },
+                modifier = Modifier.size(48.dp),
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                elevation = FloatingActionButtonDefaults.elevation(6.dp)
             ) {
-                Text(
-                    text = "+",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Zoom In",
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
             
             FloatingActionButton(
-                onClick = { viewModel.updateScale(uiState.scale * 0.8f) },
-                modifier = Modifier.size(40.dp),
-                containerColor = MaterialTheme.colorScheme.surface,
-                elevation = FloatingActionButtonDefaults.elevation(2.dp)
+                onClick = { viewModel.updateScale((uiState.scale * 0.8f).coerceAtLeast(0.3f)) },
+                modifier = Modifier.size(48.dp),
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                elevation = FloatingActionButtonDefaults.elevation(6.dp)
             ) {
-                Text(
-                    text = "−",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Zoom Out",
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
         }
@@ -254,20 +193,212 @@ fun MindMapScreen(
 }
 
 @Composable
-private fun MindMapNode(
+private fun LoadingState() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            CircularProgressIndicator(
+                color = MaterialTheme.colorScheme.primary,
+                strokeWidth = 3.dp
+            )
+            Text(
+                text = "Loading Mind Map...",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun ErrorState(
+    error: String,
+    onRetry: () -> Unit
+) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier.padding(32.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = "Error",
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.size(48.dp)
+                )
+                Text(
+                    text = "Something went wrong",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+                Button(
+                    onClick = onRetry,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Retry")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun EnhancedMindMapContent(
+    uiState: MindMapUiState,
+    canvasSize: IntSize,
+    isConnectionMode: Boolean,
+    connectionStartNode: NodePosition?,
+    onCanvasSizeChanged: (IntSize) -> Unit,
+    onNodeClick: (NodePosition) -> Unit,
+    onNodeDrag: (String, Float, Float) -> Unit,
+    onScaleChange: (Float) -> Unit,
+    onOffsetChange: (Float, Float) -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTransformGestures { _, pan, zoom, _ ->
+                    onScaleChange((uiState.scale * zoom).coerceIn(0.3f, 3f))
+                    onOffsetChange(
+                        uiState.offsetX + pan.x,
+                        uiState.offsetY + pan.y
+                    )
+                }
+            }
+            .onGloballyPositioned { coordinates ->
+                onCanvasSizeChanged(coordinates.size)
+            }
+    ) {
+        // Enhanced connection canvas
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    scaleX = uiState.scale
+                    scaleY = uiState.scale
+                    translationX = uiState.offsetX
+                    translationY = uiState.offsetY
+                }
+        ) {
+            // Draw enhanced connections
+            uiState.connections.forEach { connection ->
+                drawEnhancedConnection(
+                    connection = connection,
+                    isHighlighted = isConnectionMode && 
+                        (connectionStartNode?.node?.id == connection.fromNodeId ||
+                         connectionStartNode?.node?.id == connection.toNodeId)
+                )
+            }
+            
+            // Draw temporary connection line in connection mode
+            if (isConnectionMode && connectionStartNode != null) {
+                drawTempConnectionLine(connectionStartNode, size)
+            }
+        }
+        
+        // Enhanced nodes
+        uiState.nodePositions.forEach { nodePosition ->
+            EnhancedMindMapNode(
+                nodePosition = nodePosition,
+                scale = uiState.scale,
+                offsetX = uiState.offsetX,
+                offsetY = uiState.offsetY,
+                isConnectionMode = isConnectionMode,
+                isConnectionStart = connectionStartNode?.node?.id == nodePosition.node.id,
+                onNodeClick = { 
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onNodeClick(nodePosition) 
+                },
+                onNodeDrag = { deltaX, deltaY ->
+                    onNodeDrag(
+                        nodePosition.node.id,
+                        nodePosition.x + deltaX / uiState.scale,
+                        nodePosition.y + deltaY / uiState.scale
+                    )
+                }
+            )
+        }
+        
+        // Empty state
+        if (uiState.nodePositions.isEmpty()) {
+            EnhancedEmptyState(
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
+    }
+}
+
+@Composable
+private fun EnhancedMindMapNode(
     nodePosition: NodePosition,
     scale: Float,
     offsetX: Float,
     offsetY: Float,
+    isConnectionMode: Boolean,
+    isConnectionStart: Boolean,
     onNodeClick: () -> Unit,
     onNodeDrag: (Float, Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val node = nodePosition.node
     val animatedScale by animateFloatAsState(
-        targetValue = if (nodePosition.isSelected) 1.1f else 1f,
-        animationSpec = tween(200), label = ""
+        targetValue = when {
+            isConnectionStart -> 1.3f
+            nodePosition.isSelected -> 1.15f
+            isConnectionMode -> 0.9f
+            else -> 1f
+        },
+        animationSpec = tween(300), 
+        label = "nodeScale"
     )
+    
+    val animatedElevation by animateFloatAsState(
+        targetValue = when {
+            isConnectionStart -> 16f
+            nodePosition.isSelected -> 12f
+            else -> 6f
+        },
+        animationSpec = tween(300),
+        label = "nodeElevation"
+    )
+    
+    // Dynamic color based on node type and state
+    val nodeColor = remember(node, nodePosition.isSelected, isConnectionStart) {
+        when {
+            isConnectionStart -> Color(0xFF4CAF50) // Green for connection start
+            nodePosition.isSelected -> Color(0xFF2196F3) // Blue for selected
+            node.tags.contains("important") -> Color(0xFFF44336) // Red for important
+            node.tags.contains("idea") -> Color(0xFFFF9800) // Orange for ideas
+            node.tags.contains("task") -> Color(0xFF9C27B0) // Purple for tasks
+            else -> Color(0xFF607D8B) // Default blue-grey
+        }
+    }
     
     Box(
         modifier = modifier
@@ -275,12 +406,12 @@ private fun MindMapNode(
                 x = with(LocalDensity.current) { (nodePosition.x * scale + offsetX).toDp() },
                 y = with(LocalDensity.current) { (nodePosition.y * scale + offsetY).toDp() }
             )
-            .size(120.dp)
+            .size(140.dp)
             .scale(animatedScale)
             .pointerInput(Unit) {
-                detectTapGestures {
-                    onNodeClick()
-                }
+                detectTapGestures(
+                    onTap = { onNodeClick() }
+                )
             }
             .pointerInput(Unit) {
                 detectDragGestures { _, dragAmount ->
@@ -289,78 +420,141 @@ private fun MindMapNode(
             },
         contentAlignment = Alignment.Center
     ) {
+        // Enhanced card with gradient and shadow
         Card(
             modifier = Modifier.fillMaxSize(),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(
-                containerColor = if (nodePosition.isSelected) {
-                    MaterialTheme.colorScheme.primaryContainer
-                } else {
-                    MaterialTheme.colorScheme.surface
-                }
+                containerColor = nodeColor.copy(alpha = 0.1f)
             ),
             elevation = CardDefaults.cardElevation(
-                defaultElevation = if (nodePosition.isSelected) 8.dp else 4.dp
+                defaultElevation = animatedElevation.dp
             ),
-            border = if (nodePosition.isSelected) {
-                androidx.compose.foundation.BorderStroke(
-                    2.dp,
-                    MaterialTheme.colorScheme.primary
-                )
-            } else null
+            border = BorderStroke(
+                width = if (nodePosition.isSelected || isConnectionStart) 3.dp else 1.dp,
+                color = nodeColor.copy(alpha = if (nodePosition.isSelected || isConnectionStart) 1f else 0.3f)
+            )
         ) {
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                    .background(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                nodeColor.copy(alpha = 0.2f),
+                                nodeColor.copy(alpha = 0.05f)
+                            ),
+                            radius = 100f
+                        )
+                    )
             ) {
-                // Node title
-                Text(
-                    text = node.title,
-                    style = MaterialTheme.typography.titleSmall.copy(
-                        fontWeight = FontWeight.SemiBold
-                    ),
-                    color = if (nodePosition.isSelected) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                    textAlign = TextAlign.Center,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                
-                // Tags indicator
-                if (node.tags.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        modifier = Modifier.height(16.dp)
-                    ) {
-                        items(node.tags.take(3)) { tag ->
-                            Surface(
-                                modifier = Modifier.size(6.dp),
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.primary
-                            ) {}
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Node icon based on tags
+                    val nodeIcon = remember(node.tags) {
+                        when {
+                            node.tags.contains("task") -> Icons.Default.CheckCircle
+                            node.tags.contains("idea") -> Icons.Default.Star
+                            node.tags.contains("important") -> Icons.Default.Star
+                            node.tags.contains("note") -> Icons.Default.Edit
+                            else -> Icons.Default.Star
+                        }
+                    }
+                    
+                    Icon(
+                        imageVector = nodeIcon,
+                        contentDescription = null,
+                        tint = nodeColor,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    
+                    // Enhanced title with better typography
+                    Text(
+                        text = node.title,
+                        style = MaterialTheme.typography.titleSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    
+                    // Connection indicator
+                    if (node.connectedNodeIds.isNotEmpty()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = null,
+                                tint = nodeColor,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Text(
+                                text = "${node.connectedNodeIds.size}",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Medium
+                                ),
+                                color = nodeColor
+                            )
+                        }
+                    }
+                    
+                    // Enhanced tags display
+                    if (node.tags.isNotEmpty()) {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.height(20.dp)
+                        ) {
+                            items(node.tags.take(3)) { tag ->
+                                Surface(
+                                    modifier = Modifier
+                                        .height(16.dp)
+                                        .clip(RoundedCornerShape(8.dp)),
+                                    color = nodeColor.copy(alpha = 0.2f)
+                                ) {
+                                    Text(
+                                        text = tag,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 10.sp
+                                        ),
+                                        color = nodeColor,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
                 
-                // Connection count
-                if (node.connectedNodeIds.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "${node.connectedNodeIds.size} connections",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (nodePosition.isSelected) {
-                            MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
+                // Selection indicator
+                if (nodePosition.isSelected || isConnectionStart) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp)
+                            .size(16.dp)
+                            .background(
+                                color = nodeColor,
+                                shape = CircleShape
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isConnectionStart) Icons.Default.Share else Icons.Default.Check,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(10.dp)
+                        )
+                    }
                 }
             }
         }
@@ -368,185 +562,258 @@ private fun MindMapNode(
 }
 
 @Composable
-private fun SelectedNodePanel(
-    nodePosition: NodePosition,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-    onConnect: () -> Unit,
-    onDeselect: () -> Unit,
+private fun EnhancedMindMapToolbar(
+    isConnectionMode: Boolean,
+    connectionStartNode: NodePosition?,
+    onAddNode: () -> Unit,
+    onToggleConnectionMode: () -> Unit,
+    onDeleteSelectedNodes: () -> Unit,
+    onResetView: () -> Unit,
+    onSave: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
         modifier = modifier
             .fillMaxWidth()
             .padding(16.dp),
-        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
         ),
         elevation = CardDefaults.cardElevation(8.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Header
+            // Add node
+            EnhancedToolbarButton(
+                icon = Icons.Default.Add,
+                label = "Add",
+                onClick = onAddNode,
+                color = MaterialTheme.colorScheme.primary
+            )
+            
+            // Connection mode
+            EnhancedToolbarButton(
+                icon = Icons.Default.Share,
+                label = if (isConnectionMode) "Cancel" else "Connect",
+                onClick = onToggleConnectionMode,
+                color = if (isConnectionMode) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
+                isActive = isConnectionMode
+            )
+            
+            // Delete selected
+            EnhancedToolbarButton(
+                icon = Icons.Default.Delete,
+                label = "Delete",
+                onClick = onDeleteSelectedNodes,
+                color = MaterialTheme.colorScheme.error
+            )
+            
+            // Reset view
+            EnhancedToolbarButton(
+                icon = Icons.Default.Refresh,
+                label = "Reset",
+                onClick = onResetView,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            
+            // Save
+            EnhancedToolbarButton(
+                icon = Icons.Default.Check,
+                label = "Save",
+                onClick = onSave,
+                color = MaterialTheme.colorScheme.tertiary
+            )
+        }
+    }
+}
+
+@Composable
+private fun EnhancedToolbarButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    color: Color,
+    isActive: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { onClick() }
+            .padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Surface(
+            modifier = Modifier.size(40.dp),
+            shape = CircleShape,
+            color = if (isActive) color.copy(alpha = 0.2f) else Color.Transparent
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = color,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+        
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal
+            ),
+            color = color
+        )
+    }
+}
+
+@Composable
+private fun ConnectionModeIndicator(
+    connectionStartNode: NodePosition?,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.padding(16.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Share,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            
+            Text(
+                text = if (connectionStartNode == null) {
+                    "Select first node to connect"
+                } else {
+                    "Select second node to complete connection"
+                },
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = FontWeight.Medium
+                ),
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
+    }
+}
+
+@Composable
+private fun EnhancedErrorSnackbar(
+    error: String,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.padding(16.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.weight(1f)
             ) {
-                Text(
-                    text = nodePosition.node.title,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.SemiBold
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onErrorContainer
                 )
                 
-                IconButton(onClick = onDeselect) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Deselect",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            
-            // Content preview
-            if (nodePosition.node.content.isNotBlank()) {
-                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = nodePosition.node.content,
+                    text = error,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    color = MaterialTheme.colorScheme.onErrorContainer
                 )
             }
             
-            // Tags
-            if (nodePosition.node.tags.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    items(nodePosition.node.tags) { tag ->
-                        Surface(
-                            modifier = Modifier.clip(RoundedCornerShape(6.dp)),
-                            color = MaterialTheme.colorScheme.primaryContainer
-                        ) {
-                            Text(
-                                text = tag,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
-                        }
-                    }
-                }
-            }
-            
-            // Action buttons
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                OutlinedButton(
-                    onClick = onEdit,
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Edit")
-                }
-                
-                OutlinedButton(
-                    onClick = onConnect,
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Share,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Connect")
-                }
-                
-                OutlinedButton(
-                    onClick = onDelete,
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    ),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Delete")
-                }
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Dismiss",
+                    tint = MaterialTheme.colorScheme.onErrorContainer
+                )
             }
         }
     }
 }
 
 @Composable
-private fun EmptyMindMapState(
-    onAddClick: () -> Unit,
+private fun EnhancedEmptyState(
     modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier.padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            text = "🧬",
-            fontSize = 64.sp
+        // Animated brain icon
+        val animatedScale by animateFloatAsState(
+            targetValue = 1f,
+            animationSpec = tween(1000),
+            label = "brainScale"
         )
         
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        Text(
-            text = "Create Your Mind Map",
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        Text(
-            text = "Add your first node to start visualizing connections",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
-        
-        Spacer(modifier = Modifier.height(24.dp))
-        
-        Button(
-            onClick = onAddClick,
-            shape = RoundedCornerShape(12.dp)
+        Box(
+            modifier = Modifier
+                .size(120.dp)
+                .scale(animatedScale)
+                .background(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                            Color.Transparent
+                        )
+                    ),
+                    shape = CircleShape
+                ),
+            contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
+            Text(
+                text = "🧠",
+                fontSize = 64.sp
             )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Add First Node")
         }
+        
+        Text(
+            text = "Your Mind Map Awaits",
+            style = MaterialTheme.typography.headlineMedium.copy(
+                fontWeight = FontWeight.Bold
+            ),
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center
+        )
+        
+        Text(
+            text = "Create nodes to visualize your thoughts and connect ideas",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
@@ -627,58 +894,103 @@ private fun NodeDialog(
     )
 }
 
-private fun DrawScope.drawConnection(
+private fun DrawScope.drawEnhancedConnection(
     connection: Connection,
-    color: Color
+    isHighlighted: Boolean = false
 ) {
-    val startX = connection.fromX + 60.dp.toPx() // Node center offset
-    val startY = connection.fromY + 60.dp.toPx()
-    val endX = connection.toX + 60.dp.toPx()
-    val endY = connection.toY + 60.dp.toPx()
+    val startX = connection.fromX + 70.dp.toPx() // Node center
+    val startY = connection.fromY + 70.dp.toPx()
+    val endX = connection.toX + 70.dp.toPx()
+    val endY = connection.toY + 70.dp.toPx()
     
-    // Draw curved line
-    val controlPointX = (startX + endX) / 2
-    val controlPointY = min(startY, endY) - 50.dp.toPx()
+    // Calculate control points for smooth curve
+    val midX = (startX + endX) / 2
+    val midY = (startY + endY) / 2
+    val distance = sqrt((endX - startX).pow(2) + (endY - startY).pow(2))
+    val curvature = (distance / 4).coerceAtMost(100.dp.toPx())
+    
+    val controlX = midX
+    val controlY = midY - curvature
     
     val path = Path().apply {
         moveTo(startX, startY)
-        quadraticBezierTo(controlPointX, controlPointY, endX, endY)
+        quadraticBezierTo(controlX, controlY, endX, endY)
     }
     
+    // Enhanced connection styling
+    val connectionColor = if (isHighlighted) {
+        Color(0xFF4CAF50)
+    } else {
+        Color(0xFF2196F3).copy(alpha = 0.7f)
+    }
+    
+    val strokeWidth = if (isHighlighted) 5.dp.toPx() else 3.dp.toPx()
+    
+    // Draw shadow
     drawPath(
         path = path,
-        color = color,
-        style = androidx.compose.ui.graphics.drawscope.Stroke(
-            width = 3.dp.toPx(),
-            cap = StrokeCap.Round
+        color = Color.Black.copy(alpha = 0.1f),
+        style = Stroke(
+            width = strokeWidth + 2.dp.toPx(),
+            cap = StrokeCap.Round,
+            join = StrokeJoin.Round
         )
     )
     
-    // Draw arrow at the end
-    val arrowAngle = atan2(endY - controlPointY, endX - controlPointX)
-    val arrowLength = 15.dp.toPx()
-    val arrowAngle1 = arrowAngle + PI / 6
-    val arrowAngle2 = arrowAngle - PI / 6
-    
-    drawLine(
-        color = color,
-        start = Offset(endX, endY),
-        end = Offset(
-            endX - arrowLength * cos(arrowAngle1).toFloat(),
-            endY - arrowLength * sin(arrowAngle1).toFloat()
-        ),
-        strokeWidth = 3.dp.toPx(),
-        cap = StrokeCap.Round
+    // Draw main connection
+    drawPath(
+        path = path,
+        color = connectionColor,
+        style = Stroke(
+            width = strokeWidth,
+            cap = StrokeCap.Round,
+            join = StrokeJoin.Round
+        )
     )
     
+    // Draw enhanced arrow
+    val arrowAngle = atan2(endY - controlY, endX - controlX)
+    val arrowLength = 20.dp.toPx()
+    val arrowWidth = 10.dp.toPx()
+    
+    val arrowPath = Path().apply {
+        moveTo(endX, endY)
+        lineTo(
+            endX - arrowLength * cos(arrowAngle - PI/6).toFloat(),
+            endY - arrowLength * sin(arrowAngle - PI/6).toFloat()
+        )
+        lineTo(
+            endX - arrowWidth * cos(arrowAngle).toFloat(),
+            endY - arrowWidth * sin(arrowAngle).toFloat()
+        )
+        lineTo(
+            endX - arrowLength * cos(arrowAngle + PI/6).toFloat(),
+            endY - arrowLength * sin(arrowAngle + PI/6).toFloat()
+        )
+        close()
+    }
+    
+    drawPath(
+        path = arrowPath,
+        color = connectionColor
+    )
+}
+
+private fun DrawScope.drawTempConnectionLine(
+    startNode: NodePosition,
+    canvasSize: Size
+) {
+    val startX = startNode.x + 70.dp.toPx()
+    val startY = startNode.y + 70.dp.toPx()
+    val endX = canvasSize.width / 2
+    val endY = canvasSize.height / 2
+    
     drawLine(
-        color = color,
-        start = Offset(endX, endY),
-        end = Offset(
-            endX - arrowLength * cos(arrowAngle2).toFloat(),
-            endY - arrowLength * sin(arrowAngle2).toFloat()
-        ),
+        color = Color(0xFF4CAF50).copy(alpha = 0.5f),
+        start = Offset(startX, startY),
+        end = Offset(endX, endY),
         strokeWidth = 3.dp.toPx(),
-        cap = StrokeCap.Round
+        cap = StrokeCap.Round,
+        pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f))
     )
 }

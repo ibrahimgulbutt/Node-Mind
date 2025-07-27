@@ -10,8 +10,9 @@ import java.time.LocalDateTime
 import kotlin.math.*
 
 data class MindMapUiState(
-    val nodes: List<NodePosition> = emptyList(),
+    val nodePositions: List<NodePosition> = emptyList(),
     val selectedNode: NodePosition? = null,
+    val selectedNodeIds: Set<String> = emptySet(),
     val connections: List<Connection> = emptyList(),
     val showAddDialog: Boolean = false,
     val showEditDialog: Boolean = false,
@@ -77,7 +78,7 @@ class MindMapViewModel(
                     val connections = buildConnections(nodePositions)
                     
                     _uiState.value = _uiState.value.copy(
-                        nodes = nodePositions,
+                        nodePositions = nodePositions,
                         connections = connections,
                         isLoading = false
                     )
@@ -110,11 +111,11 @@ class MindMapViewModel(
     }
     
     fun selectNode(nodePosition: NodePosition) {
-        val updatedNodes = _uiState.value.nodes.map { node ->
+        val updatedNodes = _uiState.value.nodePositions.map { node ->
             node.copy(isSelected = node.node.id == nodePosition.node.id)
         }
         _uiState.value = _uiState.value.copy(
-            nodes = updatedNodes,
+            nodePositions = updatedNodes,
             selectedNode = if (_uiState.value.selectedNode?.node?.id == nodePosition.node.id) {
                 null
             } else {
@@ -127,7 +128,7 @@ class MindMapViewModel(
         viewModelScope.launch {
             try {
                 // Update in-memory state immediately for responsive UI
-                val updatedNodes = _uiState.value.nodes.map { nodePos ->
+                val updatedNodes = _uiState.value.nodePositions.map { nodePos ->
                     if (nodePos.node.id == nodeId) {
                         nodePos.copy(x = newX, y = newY)
                     } else {
@@ -138,7 +139,7 @@ class MindMapViewModel(
                 val updatedConnections = buildConnections(updatedNodes)
                 
                 _uiState.value = _uiState.value.copy(
-                    nodes = updatedNodes,
+                    nodePositions = updatedNodes,
                     connections = updatedConnections
                 )
             } catch (e: Exception) {
@@ -294,6 +295,67 @@ class MindMapViewModel(
             scale = 1f,
             offsetX = 0f,
             offsetY = 0f
+        )
+    }
+    
+    fun refreshData() {
+        _uiState.value = _uiState.value.copy(isLoading = true)
+        loadMindMap()
+    }
+    
+    fun saveMindMap() {
+        viewModelScope.launch {
+            try {
+                // Update all nodes with their current positions
+                _uiState.value.nodePositions.forEach { nodePosition ->
+                    val updatedNode = nodePosition.node.copy(
+                        positionX = nodePosition.x,
+                        positionY = nodePosition.y,
+                        updatedAt = LocalDateTime.now().toString()
+                    )
+                    nodeRepository.updateNode(updatedNode)
+                }
+                
+                // Show success feedback
+                _uiState.value = _uiState.value.copy(
+                    error = "Mind map saved successfully!"
+                )
+                // Clear success message after delay
+                kotlinx.coroutines.delay(2000)
+                clearError()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    error = "Failed to save mind map: ${e.message}"
+                )
+            }
+        }
+    }
+    
+    fun deleteSelectedNodes() {
+        viewModelScope.launch {
+            try {
+                val selectedNodes = _uiState.value.nodePositions.filter { it.isSelected }
+                selectedNodes.forEach { nodePosition ->
+                    nodeRepository.deleteNode(nodePosition.node)
+                }
+                
+                // Refresh data to update UI
+                loadMindMap()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    error = "Failed to delete nodes: ${e.message}"
+                )
+            }
+        }
+    }
+    
+    fun resetView() {
+        _uiState.value = _uiState.value.copy(
+            scale = 1f,
+            offsetX = 0f,
+            offsetY = 0f,
+            selectedNode = null,
+            nodePositions = _uiState.value.nodePositions.map { it.copy(isSelected = false) }
         )
     }
     
