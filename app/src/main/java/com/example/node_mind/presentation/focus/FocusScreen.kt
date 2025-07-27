@@ -49,7 +49,8 @@ fun FocusScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(16.dp)
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Header
         Text(
@@ -158,11 +159,12 @@ private fun TimerDisplay(
     )
     
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxWidth()
     ) {
         // Timer Ring
         Box(
-            modifier = Modifier.size(250.dp),
+            modifier = Modifier.size(280.dp),
             contentAlignment = Alignment.Center
         ) {
             Canvas(
@@ -195,7 +197,9 @@ private fun TimerDisplay(
         
         // Control Buttons
         Row(
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             // Start/Pause/Resume Button
             Button(
@@ -206,7 +210,9 @@ private fun TimerDisplay(
                         isPaused -> onResume()
                     }
                 },
-                modifier = Modifier.size(width = 120.dp, height = 48.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(56.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = when {
                         isRunning -> MaterialTheme.colorScheme.secondary
@@ -237,7 +243,9 @@ private fun TimerDisplay(
             // Stop Button
             OutlinedButton(
                 onClick = onStop,
-                modifier = Modifier.size(width = 100.dp, height = 48.dp)
+                modifier = Modifier
+                    .weight(0.8f)
+                    .height(56.dp)
             ) {
                 Text("⏹️", fontSize = 16.sp)
                 Spacer(modifier = Modifier.width(8.dp))
@@ -249,31 +257,41 @@ private fun TimerDisplay(
         
         // Time Adjustment Buttons
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             OutlinedButton(
                 onClick = { onTimeAdjust(-5 * 60 * 1000) },
-                modifier = Modifier.size(width = 60.dp, height = 36.dp)
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
             ) {
-                Text("-5m", fontSize = 12.sp)
+                Text("-5min", fontSize = 14.sp)
             }
             OutlinedButton(
                 onClick = { onTimeAdjust(-1 * 60 * 1000) },
-                modifier = Modifier.size(width = 60.dp, height = 36.dp)
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
             ) {
-                Text("-1m", fontSize = 12.sp)
+                Text("-1min", fontSize = 14.sp)
             }
             OutlinedButton(
                 onClick = { onTimeAdjust(1 * 60 * 1000) },
-                modifier = Modifier.size(width = 60.dp, height = 36.dp)
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
             ) {
-                Text("+1m", fontSize = 12.sp)
+                Text("+1min", fontSize = 14.sp)
             }
             OutlinedButton(
                 onClick = { onTimeAdjust(5 * 60 * 1000) },
-                modifier = Modifier.size(width = 60.dp, height = 36.dp)
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
             ) {
-                Text("+5m", fontSize = 12.sp)
+                Text("+5min", fontSize = 14.sp)
             }
         }
     }

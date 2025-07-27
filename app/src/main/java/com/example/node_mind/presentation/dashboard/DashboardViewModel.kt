@@ -97,12 +97,12 @@ class DashboardViewModel(
                 val startOfWeek = LocalDate.now().minusDays(6)
                 val endOfWeek = LocalDate.now()
                 
-                focusRepository.getWeeklyStats(
+                val weeklyStats = focusRepository.getWeeklyStats(
                     startOfWeek.toString(),
                     endOfWeek.toString()
-                ).collect { weeklyStats ->
-                    _uiState.value = _uiState.value.copy(weeklyStats = weeklyStats)
-                }
+                ).first() // Get first emission instead of collecting
+                
+                _uiState.value = _uiState.value.copy(weeklyStats = weeklyStats)
                 
                 // Load total stats
                 loadTotalStats()
