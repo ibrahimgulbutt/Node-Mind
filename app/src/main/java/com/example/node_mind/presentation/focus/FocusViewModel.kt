@@ -63,15 +63,13 @@ class FocusViewModel(
             
             try {
                 // Load recent sessions
-                focusRepository.getRecentSessions(10).collect { sessions ->
-                    _uiState.value = _uiState.value.copy(recentSessions = sessions)
-                }
+                val sessions = focusRepository.getRecentSessions(10).first()
+                _uiState.value = _uiState.value.copy(recentSessions = sessions)
                 
                 // Load available tasks
-                taskRepository.getAllTasks().collect { tasks ->
-                    val incompleteTasks = tasks.filter { !it.isCompleted }
-                    _uiState.value = _uiState.value.copy(availableTasks = incompleteTasks)
-                }
+                val allTasks = taskRepository.getAllTasks().first()
+                val incompleteTasks = allTasks.filter { !it.isCompleted }
+                _uiState.value = _uiState.value.copy(availableTasks = incompleteTasks)
                 
                 // Load today's stats
                 loadTodayStats()

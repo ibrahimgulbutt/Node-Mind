@@ -42,9 +42,11 @@ fun DashboardScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     
-    // Handle errors
-    uiState.error?.let { error ->
-        LaunchedEffect(error) {
+    // Handle errors with proper disposal
+    LaunchedEffect(uiState.error) {
+        uiState.error?.let {
+            // Show error briefly then clear
+            kotlinx.coroutines.delay(3000)
             viewModel.clearError()
         }
     }
@@ -54,60 +56,73 @@ fun DashboardScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        if (uiState.isLoading) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
+        when {
+            uiState.isLoading -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        CircularProgressIndicator(
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Loading dashboard...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Header with settings
-                item {
-                    DashboardHeader(
-                        onSettingsClick = viewModel::showSettings,
-                        onRefreshClick = viewModel::refreshData
-                    )
-                }
-                
-                // Stats Overview
-                item {
-                    StatsOverview(
-                        totalStats = uiState.totalStats
-                    )
-                }
-                
-                // Weekly Progress Chart
-                if (uiState.weeklyStats.isNotEmpty()) {
-                    item {
-                        WeeklyProgressChart(
-                            weeklyStats = uiState.weeklyStats
+            uiState.error != null -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "⚠️",
+                            fontSize = 48.sp
                         )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Something went wrong",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = uiState.error!!,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = viewModel::refreshData
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Retry")
+                        }
                     }
                 }
-                
-                // Achievements
-                if (uiState.achievements.isNotEmpty()) {
-                    item {
-                        AchievementsSection(
-                            achievements = uiState.achievements
-                        )
-                    }
-                }
-                
-                // Recent Activity
-                if (uiState.recentActivity.isNotEmpty()) {
-                    item {
-                        RecentActivitySection(
-                            activities = uiState.recentActivity
-                        )
-                    }
-                }
+            }
+            else -> {
+                DashboardContent(
+                    uiState = uiState,
+                    onSettingsClick = viewModel::showSettings,
+                    onRefreshClick = viewModel::refreshData
+                )
             }
         }
     }
@@ -119,6 +134,66 @@ fun DashboardScreen(
             onSettingsUpdate = viewModel::updateSettings,
             onDismiss = viewModel::hideSettings
         )
+    }
+}
+
+@Composable
+private fun DashboardContent(
+    uiState: DashboardUiState,
+    onSettingsClick: () -> Unit,
+    onRefreshClick: () -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Header with settings
+        item {
+            DashboardHeader(
+                onSettingsClick = onSettingsClick,
+                onRefreshClick = onRefreshClick
+            )
+        }
+        
+        // Stats Overview - Use key to prevent unnecessary recomposition
+        item(key = "stats_overview") {
+            StatsOverview(
+                totalStats = uiState.totalStats
+            )
+        }
+        
+        // Weekly Progress Chart - Only show if data exists
+        if (uiState.weeklyStats.isNotEmpty()) {
+            item(key = "weekly_chart") {
+                WeeklyProgressChart(
+                    weeklyStats = uiState.weeklyStats
+                )
+            }
+        }
+        
+        // Achievements - Only show if achievements exist
+        if (uiState.achievements.isNotEmpty()) {
+            item(key = "achievements") {
+                AchievementsSection(
+                    achievements = uiState.achievements
+                )
+            }
+        }
+        
+        // Recent Activity - Only show if activity exists
+        if (uiState.recentActivity.isNotEmpty()) {
+            item(key = "recent_activity") {
+                RecentActivitySection(
+                    activities = uiState.recentActivity
+                )
+            }
+        }
+        
+        // Add some bottom padding
+        item {
+            Spacer(modifier = Modifier.height(80.dp))
+        }
     }
 }
 
@@ -198,6 +273,25 @@ private fun DashboardHeader(
 private fun StatsOverview(
     totalStats: TotalStats
 ) {
+    // Memoize calculations to prevent unnecessary recomputation
+    val taskProgress = remember(totalStats.completedTasks, totalStats.totalTasks) {
+        if (totalStats.totalTasks > 0) {
+            totalStats.completedTasks.toFloat() / totalStats.totalTasks
+        } else 0f
+    }
+    
+    val focusProgress = remember(totalStats.totalFocusHours) {
+        minOf(totalStats.totalFocusHours.toFloat() / 100f, 1f)
+    }
+    
+    val streakProgress = remember(totalStats.currentStreak) {
+        minOf(totalStats.currentStreak.toFloat() / 30f, 1f)
+    }
+    
+    val notesProgress = remember(totalStats.totalNotes) {
+        minOf(totalStats.totalNotes.toFloat() / 50f, 1f)
+    }
+    
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(4.dp)
@@ -224,9 +318,7 @@ private fun StatsOverview(
                     value = "${totalStats.completedTasks}/${totalStats.totalTasks}",
                     subtitle = "completed",
                     icon = "✅",
-                    progress = if (totalStats.totalTasks > 0) {
-                        totalStats.completedTasks.toFloat() / totalStats.totalTasks
-                    } else 0f
+                    progress = taskProgress
                 )
                 
                 StatCard(
@@ -234,7 +326,7 @@ private fun StatsOverview(
                     value = "${totalStats.totalFocusHours}h",
                     subtitle = "total time",
                     icon = "🎯",
-                    progress = minOf(totalStats.totalFocusHours.toFloat() / 100f, 1f)
+                    progress = focusProgress
                 )
             }
             
@@ -249,7 +341,7 @@ private fun StatsOverview(
                     value = "${totalStats.totalNotes}",
                     subtitle = "created",
                     icon = "📝",
-                    progress = minOf(totalStats.totalNotes.toFloat() / 50f, 1f)
+                    progress = notesProgress
                 )
                 
                 StatCard(
@@ -257,7 +349,7 @@ private fun StatsOverview(
                     value = "${totalStats.currentStreak}",
                     subtitle = "days",
                     icon = "🔥",
-                    progress = minOf(totalStats.currentStreak.toFloat() / 30f, 1f)
+                    progress = streakProgress
                 )
             }
         }
@@ -272,6 +364,13 @@ private fun StatCard(
     icon: String,
     progress: Float
 ) {
+    // Animate progress to reduce visual glitches
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(durationMillis = 600),
+        label = "progress_animation"
+    )
+    
     Card(
         modifier = Modifier
             .width(150.dp)
@@ -319,12 +418,13 @@ private fun StatCard(
             }
             
             LinearProgressIndicator(
-                progress = progress,
+                progress = { animatedProgress },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp)),
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
         }
     }
